@@ -27,20 +27,30 @@ function generateSimulatedEvents(username: string) {
 }
 
 /**
- * Fetches recent activity from Github for a given username 
- * and stores daily activity logs in Firestore.
+ * Fetches recent activity from Github for a given username.
+ * If an accessToken is provided, it fetches authenticated events (including private repos).
  */
-export async function syncGitHubActivity(uid: string, username: string) {
+export async function syncGitHubActivity(uid: string, username: string, accessToken?: string) {
   try {
     let events = [];
-    // Basic fetch from public GitHub API
-    // Note: unauthenticated requests are rate-limited to 60/hr.
+    
     try {
-      const res = await fetch(`https://api.github.com/users/${username}/events/public`);
+      // If token provided, use it and fetch all events (including private). 
+      // Otherwise fallback to public events.
+      const url = accessToken 
+        ? `https://api.github.com/users/${username}/events`
+        : `https://api.github.com/users/${username}/events/public`;
+        
+      const headers: Record<string, string> = {};
+      if (accessToken) {
+        headers['Authorization'] = `token ${accessToken}`;
+      }
+
+      const res = await fetch(url, { headers });
       if (res.ok) {
         events = await res.json();
       } else {
-        console.warn(`GitHub API returned ${res.status}. Falling back to simulated data for demo.`);
+        console.warn(`GitHub API returned ${res.status}. Falling back to simulated data.`);
         events = generateSimulatedEvents(username);
       }
     } catch (fetchError) {
@@ -113,12 +123,17 @@ export async function syncGitHubActivity(uid: string, username: string) {
     // Update user profile to set connectedAt and focus areas
     const focusAreas = Array.from(recentRepos.values()).sort((a, b) => b.commits - a.commits).slice(0, 3);
 
-    const userRef = doc(db, 'users', uid);
-    batch.set(userRef, {
+    const updatePayload: any = {
         githubUsername: username,
         githubConnectedAt: serverTimestamp(),
         recentFocusAreas: focusAreas
-    }, { merge: true });
+    };
+    if (accessToken) {
+        updatePayload.githubAccessToken = accessToken;
+    }
+
+    const userRef = doc(db, 'users', uid);
+    batch.set(userRef, updatePayload, { merge: true });
 
     await batch.commit();
 
