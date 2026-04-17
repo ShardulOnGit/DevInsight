@@ -1,25 +1,20 @@
 import React, { useEffect, useState } from 'react';
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
-import { Users, Activity, AlertTriangle, ShieldCheck, TrendingUp, BarChart2 } from 'lucide-react';
+import { Users, Activity, AlertTriangle, ShieldCheck, TrendingUp, BarChart2, Zap } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell, AreaChart, Area } from 'recharts';
 import { useAuth } from '@/lib/AuthContext';
-import { collection, getDocs, onSnapshot, query, orderBy } from 'firebase/firestore';
+import { collection, onSnapshot, query } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import { format, parseISO, subDays } from 'date-fns';
 import { motion } from 'framer-motion';
 
 const container = {
   hidden: { opacity: 0 },
-  show: {
-    opacity: 1,
-    transition: { staggerChildren: 0.1 }
-  }
+  show: { opacity: 1, transition: { staggerChildren: 0.1 } }
 };
 
 const itemVariants = {
   hidden: { opacity: 0, y: 20 },
-  show: { opacity: 1, y: 0, transition: { type: "spring", stiffness: 300, damping: 24 } }
+  show: { opacity: 1, y: 0, transition: { type: 'spring', stiffness: 300, damping: 24 } }
 };
 
 export default function TeamDashboard() {
@@ -30,235 +25,244 @@ export default function TeamDashboard() {
 
   useEffect(() => {
     if (!user) return;
-    
-    // Fetch all activities 
     const q = query(collection(db, 'dailyActivities'));
     const unsubscribe = onSnapshot(q, (snapshot) => {
       let allActivities: any[] = [];
       let uniqueDevs = new Set<string>();
-      
       snapshot.forEach(doc => {
         const data = doc.data();
         allActivities.push(data);
         if (data.uid) uniqueDevs.add(data.uid);
       });
 
-      // Aggregate Velocity by Day
       const velocityMap: Record<string, number> = {};
-      
       for (let i = 0; i < 14; i++) {
-          const d = format(subDays(new Date(), 13 - i), 'yyyy-MM-dd');
-          velocityMap[d] = 0;
+        const d = format(subDays(new Date(), 13 - i), 'yyyy-MM-dd');
+        velocityMap[d] = 0;
       }
 
-      const devMetrics: Record<string, { commits: number, deepWork: number, lateNight: number, weekend: number }> = {};
-
+      const devMetrics: Record<string, { commits: number; deepWork: number; lateNight: number; weekend: number }> = {};
       allActivities.forEach(act => {
-        if (velocityMap[act.date] !== undefined) {
-          velocityMap[act.date] += (act.commits || 0);
-        } else {
-            // Include dates beyond 14 days if needed, but let's stick to 14
-        }
-
-        if (!devMetrics[act.uid]) {
-            devMetrics[act.uid] = { commits: 0, deepWork: 0, lateNight: 0, weekend: 0 };
-        }
+        if (velocityMap[act.date] !== undefined) velocityMap[act.date] += (act.commits || 0);
+        if (!devMetrics[act.uid]) devMetrics[act.uid] = { commits: 0, deepWork: 0, lateNight: 0, weekend: 0 };
         devMetrics[act.uid].commits += (act.commits || 0);
         devMetrics[act.uid].deepWork += (act.deepWorkHours || 0);
         devMetrics[act.uid].lateNight += (act.lateNightCommits || 0);
         devMetrics[act.uid].weekend += (act.weekendCommits || 0);
       });
 
-      const formattedVelocity = Object.entries(velocityMap).map(([date, velocity]) => ({
-          day: format(parseISO(date), 'MMM dd'),
-          velocity
-      }));
-      setTeamVelocityData(formattedVelocity);
+      setTeamVelocityData(
+        Object.entries(velocityMap).map(([date, velocity]) => ({ day: format(parseISO(date), 'MMM dd'), velocity }))
+      );
 
-      let totalProductivity = 0;
-      let riskCount = 0;
+      let totalProductivity = 0, riskCount = 0;
       const burnoutChart: any[] = [];
-
       let i = 1;
       Object.entries(devMetrics).forEach(([uid, metrics]) => {
-          const prodScore = metrics.commits > 0 ? Math.min(100, Math.round((metrics.deepWork * 2) + (metrics.commits * 0.5))) : 0;
-          totalProductivity += prodScore;
-
-          let riskScore = 20; // baseline
-          if (metrics.lateNight > 10 || metrics.weekend > 15) riskScore = 85;
-          else if (metrics.lateNight > 4 || metrics.weekend > 5) riskScore = 60;
-          
-          if (riskScore >= 75) riskCount++;
-
-          burnoutChart.push({
-              name: `Dev ${i++}`,
-              risk: riskScore
-          });
+        const prodScore = metrics.commits > 0 ? Math.min(100, Math.round((metrics.deepWork * 2) + (metrics.commits * 0.5))) : 0;
+        totalProductivity += prodScore;
+        let riskScore = 20;
+        if (metrics.lateNight > 10 || metrics.weekend > 15) riskScore = 85;
+        else if (metrics.lateNight > 4 || metrics.weekend > 5) riskScore = 60;
+        if (riskScore >= 75) riskCount++;
+        burnoutChart.push({ name: `Dev ${i++}`, risk: riskScore });
       });
 
       setTeamBurnoutData(burnoutChart);
       setStats({
-          avgProductivity: uniqueDevs.size > 0 ? Math.round(totalProductivity / uniqueDevs.size) : 0,
-          totalDevs: uniqueDevs.size,
-          highRiskCount: riskCount
+        avgProductivity: uniqueDevs.size > 0 ? Math.round(totalProductivity / uniqueDevs.size) : 0,
+        totalDevs: uniqueDevs.size,
+        highRiskCount: riskCount
       });
-
     });
-
     return () => unsubscribe();
   }, [user]);
+
+  const isHealthy = stats.highRiskCount === 0;
+
   return (
-    <div className="space-y-6">
-      <motion.div 
+    <div className="space-y-8">
+      {/* Header */}
+      <motion.div
         initial={{ opacity: 0, y: -10 }}
         animate={{ opacity: 1, y: 0 }}
-        className="flex flex-col md:flex-row md:items-end justify-between gap-4 mb-8"
+        className="flex flex-col md:flex-row md:items-end justify-between gap-4"
       >
         <div>
-          <h2 className="text-3xl font-bold text-white tracking-tight">Team Benchmarks</h2>
-          <p className="text-text-secondary mt-1">Aggregated insights on your engineering squad's health and velocity.</p>
+          <div className="flex items-center gap-3 mb-1.5">
+            <div className="p-2 rounded-xl" style={{ background: 'rgba(99,102,241,0.1)', border: '1px solid rgba(99,102,241,0.2)' }}>
+              <Users className="w-5 h-5 text-brand" />
+            </div>
+            <h1 className="text-2xl font-black text-white tracking-tight">Team Benchmarks</h1>
+          </div>
+          <p className="text-text-secondary text-sm ml-12">Aggregated insights on your engineering squad's health and velocity.</p>
         </div>
-        <div className="flex items-center space-x-2">
-          <Badge variant="default" className="px-3 py-1 bg-white/10 text-white hover:bg-white/20 border-0 backdrop-blur-md">
-             <ShieldCheck className="w-3.5 h-3.5 mr-1.5 text-emerald-400" />
-             Data is Anonymized
-          </Badge>
-        </div>
+        <motion.span
+          whileHover={{ scale: 1.02 }}
+          className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full text-xs font-semibold self-start md:self-auto"
+          style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.08)', color: '#94a3b8' }}
+        >
+          <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
+          Data is Anonymized
+        </motion.span>
       </motion.div>
 
-      <motion.div 
+      {/* Quick Stats Row */}
+      <motion.div
         variants={container}
         initial="hidden"
         animate="show"
-        className="grid grid-cols-1 md:grid-cols-3 gap-4 lg:gap-4 auto-rows-min mt-4"
+        className="grid grid-cols-1 sm:grid-cols-3 gap-4"
       >
-        {/* Team Burnout Chart */}
-        <motion.div variants={itemVariants} className="md:col-span-2 min-h-[300px]">
-        <Card className="h-full border-white/5 bg-gradient-to-b from-bg-surface/80 to-bg-surface backdrop-blur-md shadow-md">
-          <CardHeader>
-            <CardTitle>Team Burnout Risk Matrix</CardTitle>
-            <CardDescription>Average burnout risk score per squad indicating where to balance workloads.</CardDescription>
-          </CardHeader>
-          <CardContent>
-             <div className="h-[250px] w-full mt-2">
+        <motion.div variants={itemVariants}><QuickStat label="Active Developers" value={stats.totalDevs} suffix="" icon={Users} color="#6366f1" /></motion.div>
+        <motion.div variants={itemVariants}><QuickStat label="Avg Productivity" value={stats.avgProductivity} suffix="/100" icon={Zap} color="#10b981" /></motion.div>
+        <motion.div variants={itemVariants}><QuickStat label="At-Risk Engineers" value={stats.highRiskCount} suffix="" icon={AlertTriangle} color={stats.highRiskCount > 0 ? '#f43f5e' : '#10b981'} /></motion.div>
+      </motion.div>
+
+      {/* Charts Grid */}
+      <motion.div
+        variants={container}
+        initial="hidden"
+        animate="show"
+        className="grid grid-cols-1 md:grid-cols-3 gap-5"
+      >
+        {/* Burnout Risk Chart */}
+        <motion.div variants={itemVariants} className="md:col-span-2">
+          <div className="rounded-2xl border border-border-subtle glass-elevated p-5" style={{ minHeight: '340px' }}>
+            <h3 className="text-sm font-bold text-white mb-1">Team Burnout Risk Matrix</h3>
+            <p className="text-xs text-text-muted mb-5">Burnout risk score per squad member. Red = action needed.</p>
+            <div className="h-[240px]">
+              {teamBurnoutData.length === 0 ? (
+                <div className="h-full flex items-center justify-center text-sm text-text-muted">No team data — sync GitHub activity first.</div>
+              ) : (
                 <ResponsiveContainer width="100%" height="100%">
-                  <BarChart data={teamBurnoutData} layout="vertical" margin={{ top: 10, right: 30, left: 10, bottom: 0 }}>
-                    <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="var(--color-border-subtle)" />
-                    <XAxis type="number" stroke="var(--color-text-muted)" fontSize={12} tickLine={false} axisLine={false} domain={[0, 100]} />
-                    <YAxis dataKey="name" type="category" stroke="var(--color-text-muted)" fontSize={12} tickLine={false} axisLine={false} />
-                    <Tooltip 
-                      cursor={{ fill: 'var(--color-bg-elevated)', opacity: 0.4 }}
-                      contentStyle={{ backgroundColor: 'var(--color-bg-elevated)', borderColor: 'var(--color-border-strong)', borderRadius: '8px' }}
-                      formatter={(value: number) => [`${value}/100`, "Risk Score"]}
+                  <BarChart data={teamBurnoutData} layout="vertical" margin={{ top: 5, right: 20, left: 5, bottom: 0 }}>
+                    <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="rgba(255,255,255,0.04)" />
+                    <XAxis type="number" stroke="#4b5568" fontSize={11} tickLine={false} axisLine={false} domain={[0, 100]} />
+                    <YAxis dataKey="name" type="category" stroke="#4b5568" fontSize={11} tickLine={false} axisLine={false} />
+                    <Tooltip
+                      cursor={{ fill: 'rgba(99,102,241,0.05)' }}
+                      contentStyle={{ backgroundColor: '#131626', borderColor: '#2d3055', borderRadius: '12px', padding: '10px 14px' }}
+                      formatter={(value: number) => [`${value}/100`, 'Risk Score']}
                     />
-                    <Bar dataKey="risk" radius={[0, 4, 4, 0]} barSize={24}>
+                    <Bar dataKey="risk" radius={[0, 6, 6, 0]} barSize={20}>
                       {teamBurnoutData.map((entry, index) => {
-                        let fillUrl = 'var(--color-accent-green)';
-                        if (entry.risk >= 75) fillUrl = '#f43f5e'; // rose-500
-                        else if (entry.risk >= 60) fillUrl = 'var(--color-accent-orange)';
-                        return <Cell key={`cell-${index}`} fill={fillUrl} />;
+                        let fill = '#10b981';
+                        if (entry.risk >= 75) fill = '#f43f5e';
+                        else if (entry.risk >= 60) fill = '#f59e0b';
+                        return <Cell key={`cell-${index}`} fill={fill} opacity={0.85} />;
                       })}
                     </Bar>
                   </BarChart>
                 </ResponsiveContainer>
-              </div>
-          </CardContent>
-        </Card>
+              )}
+            </div>
+          </div>
         </motion.div>
 
-        {/* Aggregated Quick Stats */}
-        <div className="md:col-span-1 flex flex-col gap-4">
-            <motion.div variants={itemVariants} className="h-1/2">
-            <Card className="h-full flex flex-col justify-center border-white/5 hover:border-brand/30 transition-all bg-gradient-to-b from-bg-surface/80 to-bg-surface backdrop-blur-sm">
-                <CardHeader className="pb-2">
-                    <div className="flex justify-between items-center">
-                        <CardTitle>Team Productivity</CardTitle>
-                        <BarChart2 className="w-5 h-5 text-accent-blue" />
-                    </div>
-                </CardHeader>
-                <CardContent>
-                    <div className="text-3xl font-bold text-white">{stats.avgProductivity}<span className="text-xl text-text-muted">/100</span></div>
-                    <p className="text-xs text-text-secondary mt-1">Average across {stats.totalDevs} developer(s)</p>
-                </CardContent>
-            </Card>
-            </motion.div>
-            <motion.div variants={itemVariants} className="h-1/2">
-            <Card className={`h-full flex flex-col justify-center border-l-4 ${stats.highRiskCount > 0 ? 'border-l-rose-500 bg-rose-500/5' : 'border-l-emerald-500 bg-emerald-500/5'} border-white/5 backdrop-blur-sm`}>
-                <CardHeader className="pb-2">
-                    <div className="flex justify-between items-center">
-                        <CardTitle className={stats.highRiskCount > 0 ? 'text-rose-400' : 'text-emerald-400'}>{stats.highRiskCount > 0 ? 'Attention Needed' : 'Healthy Team'}</CardTitle>
-                        {stats.highRiskCount > 0 ? <AlertTriangle className="w-5 h-5 text-rose-500" /> : <ShieldCheck className="w-5 h-5 text-emerald-500" />}
-                    </div>
-                </CardHeader>
-                <CardContent>
-                    <div className="text-sm text-text-primary leading-tight">
-                        {stats.highRiskCount > 0 
-                          ? <strong>{stats.highRiskCount} developer(s)</strong>
-                          : "No developers"} show elevated burnout risk patterns based on weekend and late-night commits.
-                    </div>
-                </CardContent>
-            </Card>
-            </motion.div>
-        </div>
+        {/* Manager Recommendations */}
+        <motion.div variants={itemVariants} className="md:col-span-1">
+          <div
+            className="h-full rounded-2xl p-5 flex flex-col"
+            style={{
+              background: isHealthy ? 'linear-gradient(135deg, rgba(16,185,129,0.08), rgba(6,182,212,0.05))' : 'linear-gradient(135deg, rgba(244,63,94,0.08), rgba(245,158,11,0.05))',
+              border: `1px solid ${isHealthy ? 'rgba(16,185,129,0.2)' : 'rgba(244,63,94,0.2)'}`,
+              minHeight: '340px',
+            }}
+          >
+            <div className="flex items-center gap-2 mb-4">
+              {isHealthy ? <ShieldCheck className="w-5 h-5 text-emerald-400" /> : <AlertTriangle className="w-5 h-5 text-rose-400" />}
+              <h3 className="text-sm font-bold text-white">Manager Insights</h3>
+            </div>
 
-        <motion.div variants={itemVariants} className="md:col-span-2 min-h-[250px]">
-        <Card className="h-full border-white/5 bg-gradient-to-b from-bg-surface/80 to-bg-surface backdrop-blur-sm shadow-md">
-          <CardHeader>
-            <CardTitle>Aggregated Weekly Velocity</CardTitle>
-            <CardDescription>Code output & PR merges across the entire engineering org.</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="h-[200px] w-full mt-2">
+            <div className="space-y-4 flex-1">
+              {isHealthy && stats.avgProductivity >= 50 ? (
+                <div className="p-4 rounded-xl" style={{ background: 'rgba(16,185,129,0.1)', border: '1px solid rgba(16,185,129,0.2)' }}>
+                  <p className="text-sm text-emerald-200 leading-relaxed">
+                    <strong className="text-emerald-300">✓ Optimal State:</strong> Team is delivering steadily without raising burnout alarms. Maintain current sprint pace.
+                  </p>
+                </div>
+              ) : (
+                <>
+                  {stats.highRiskCount > 0 && (
+                    <div className="p-4 rounded-xl" style={{ background: 'rgba(244,63,94,0.08)', border: '1px solid rgba(244,63,94,0.2)' }}>
+                      <p className="text-sm text-rose-200 leading-relaxed">
+                        <strong className="text-rose-300 block mb-1">⚠ Load Balance</strong>
+                        {stats.highRiskCount} engineer(s) carrying high weekend loads. Consider offloading tasks before next sprint.
+                      </p>
+                    </div>
+                  )}
+                  {stats.avgProductivity < 50 && (
+                    <div className="p-4 rounded-xl" style={{ background: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.2)' }}>
+                      <p className="text-sm text-amber-200 leading-relaxed">
+                        <strong className="text-amber-300 block mb-1">↓ Low Output</strong>
+                        Team productivity is dipping. Check for blockers or environment issues.
+                      </p>
+                    </div>
+                  )}
+                </>
+              )}
+
+              {stats.totalDevs === 0 && (
+                <p className="text-sm text-text-muted">No data yet. Sync GitHub activity across the team to see insights.</p>
+              )}
+            </div>
+          </div>
+        </motion.div>
+
+        {/* Velocity Chart */}
+        <motion.div variants={itemVariants} className="md:col-span-3">
+          <div className="rounded-2xl border border-border-subtle glass-elevated p-5" style={{ height: '280px' }}>
+            <div className="flex items-center justify-between mb-4">
+              <div>
+                <h3 className="text-sm font-bold text-white flex items-center gap-2">
+                  <TrendingUp className="w-4 h-4 text-brand" /> Aggregated Weekly Velocity
+                </h3>
+                <p className="text-xs text-text-muted mt-0.5">Code output & PR merges across the entire engineering org.</p>
+              </div>
+            </div>
+            <div className="h-[180px]">
               <ResponsiveContainer width="100%" height="100%">
-                <AreaChart data={teamVelocityData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+                <AreaChart data={teamVelocityData} margin={{ top: 5, right: 5, left: -25, bottom: 0 }}>
                   <defs>
                     <linearGradient id="colorVelocity" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor="var(--color-brand)" stopOpacity={0.3}/>
-                      <stop offset="95%" stopColor="var(--color-brand)" stopOpacity={0}/>
+                      <stop offset="5%" stopColor="rgba(99,102,241,1)" stopOpacity={0.2} />
+                      <stop offset="95%" stopColor="rgba(99,102,241,1)" stopOpacity={0} />
                     </linearGradient>
                   </defs>
-                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="var(--color-border-subtle)" />
-                  <XAxis dataKey="day" stroke="var(--color-text-muted)" fontSize={12} tickLine={false} axisLine={false} />
-                  <YAxis stroke="var(--color-text-muted)" fontSize={12} tickLine={false} axisLine={false} />
-                  <Tooltip 
-                    contentStyle={{ backgroundColor: 'var(--color-bg-elevated)', borderColor: 'var(--color-border-strong)', borderRadius: '8px' }}
-                    itemStyle={{ color: 'var(--color-text-primary)' }}
+                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="rgba(255,255,255,0.04)" />
+                  <XAxis dataKey="day" stroke="#4b5568" fontSize={11} tickLine={false} axisLine={false} />
+                  <YAxis stroke="#4b5568" fontSize={11} tickLine={false} axisLine={false} />
+                  <Tooltip
+                    contentStyle={{ backgroundColor: '#131626', borderColor: '#2d3055', borderRadius: '12px', padding: '10px 14px' }}
+                    itemStyle={{ color: '#f1f5f9' }}
+                    cursor={{ stroke: 'rgba(99,102,241,0.3)', strokeWidth: 1 }}
                   />
-                  <Area type="step" dataKey="velocity" stroke="var(--color-brand)" strokeWidth={2} fillOpacity={1} fill="url(#colorVelocity)" />
+                  <Area type="monotone" dataKey="velocity" stroke="rgba(99,102,241,1)" strokeWidth={2} fillOpacity={1} fill="url(#colorVelocity)"
+                    activeDot={{ r: 5, fill: '#131626', stroke: '#6366f1', strokeWidth: 2 }} />
                 </AreaChart>
               </ResponsiveContainer>
             </div>
-          </CardContent>
-        </Card>
-        </motion.div>
-
-        {/* Manager Actions / Tools */}
-        <motion.div variants={itemVariants} className="md:col-span-1">
-        <Card className="h-full flex flex-col justify-between border-white/5 bg-gradient-to-b from-bg-surface/80 to-bg-surface backdrop-blur-sm">
-            <CardHeader>
-              <CardTitle>Manager Recommendations</CardTitle>
-            </CardHeader>
-            <CardContent>
-              {stats.highRiskCount > 0 && (
-                <div className="insight-item mt-3 border-l-rose-500 bg-bg-elevated">
-                    <p><b>Load Balance:</b> {stats.highRiskCount} engineer(s) carrying high weekend loads. Consider offloading tasks.</p>
-                </div>
-              )}
-              {stats.avgProductivity < 50 && (
-                <div className="insight-item mt-3 border-l-amber-500 bg-bg-elevated">
-                    <p><b>Low Output:</b> Team productivity is dipping. Check for blockers or environment issues.</p>
-                </div>
-              )}
-              {stats.avgProductivity >= 50 && stats.highRiskCount === 0 && (
-                <div className="insight-item mt-3 border-l-emerald-500 bg-black/20 p-4 rounded-r-xl border border-white/5">
-                    <p className="text-sm"><b className="text-emerald-400 font-medium">Optimal State:</b> Team is delivering steadily without raising burnout alarms. Maintain current sprint pace.</p>
-                </div>
-              )}
-            </CardContent>
-        </Card>
+          </div>
         </motion.div>
       </motion.div>
+    </div>
+  );
+}
 
+function QuickStat({ label, value, suffix, icon: Icon, color }: any) {
+  return (
+    <div className="rounded-2xl border border-border-subtle glass-elevated p-5 hover:border-brand/20 transition-all card-lift">
+      <div className="flex items-start justify-between mb-3">
+        <p className="text-xs font-semibold text-text-muted uppercase tracking-wider">{label}</p>
+        <div className="p-2 rounded-lg" style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.06)' }}>
+          <Icon className="w-4 h-4" style={{ color }} />
+        </div>
+      </div>
+      <div className="flex items-baseline gap-1">
+        <span className="text-3xl font-black tracking-tight stat-number" style={{ color }}>{value}</span>
+        {suffix && <span className="text-sm text-text-muted font-semibold">{suffix}</span>}
+      </div>
     </div>
   );
 }

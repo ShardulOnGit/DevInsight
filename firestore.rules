@@ -1,61 +1,58 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    
-    // Check if the user is authenticated
+
     function isAuthenticated() {
-       return request.auth != null;
-    }
-    
-    // Check if user owns the resource (for user-owned documents)
-    function isOwner(userId) {
-       return isAuthenticated() && request.auth.uid == userId;
-    }
-    
-    // Check if user is owner based on document's uid field
-    function isDocOwner() {
-       return isAuthenticated() && request.auth.uid == resource.data.uid;
-    }
-    
-    function uidMatchesUserLoggedIn() {
-       return request.auth.uid == request.resource.data.uid;
+      return request.auth != null;
     }
 
-    function uidNotModified() {
-       return !('uid' in request.resource.data) ||
-         request.resource.data.uid == resource.data.uid;
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
     }
-    
+
+    // Used for reads — checks the stored uid field
+    function isDocOwner() {
+      return isAuthenticated() && request.auth.uid == resource.data.uid;
+    }
+
+    // Used for writes — checks the incoming uid field
+    function incomingUidMatchesUser() {
+      return request.auth.uid == request.resource.data.uid;
+    }
+
     function isValidUser() {
       let data = request.resource.data;
       return data.keys().hasAll(['uid', 'email']) &&
              data.uid is string &&
-             data.email is string &&
-             data.email.matches("^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}$");
+             data.email is string;
     }
 
     match /users/{userId} {
       allow read: if isAuthenticated();
-      allow create: if isOwner(userId) && isValidUser() && uidMatchesUserLoggedIn();
-      allow update: if isOwner(userId) && isValidUser() && uidNotModified();
+      // Full create: must include uid + email matching the logged-in user
+      allow create: if isOwner(userId) && isValidUser() && incomingUidMatchesUser();
+      // Partial merge (e.g. linking GitHub): only require ownership
+      allow update: if isOwner(userId);
     }
-    
+
     match /dailyActivities/{activityId} {
       allow read: if isAuthenticated();
-      allow create: if isAuthenticated() && uidMatchesUserLoggedIn() && request.resource.data.keys().hasAll(['uid', 'date', 'commits', 'linesChanged']);
-      allow update: if isDocOwner() && uidNotModified() && request.resource.data.keys().hasAll(['uid', 'date', 'commits', 'linesChanged']);
+      // Create: incoming data must include uid that matches logged-in user
+      allow create: if isAuthenticated() && incomingUidMatchesUser();
+      // Update/merge: only the document owner can update
+      allow update: if isDocOwner();
     }
-    
+
     match /insights/{insightId} {
       allow read: if isDocOwner();
-      allow create: if isAuthenticated() && uidMatchesUserLoggedIn() && request.resource.data.keys().hasAll(['uid', 'type', 'title', 'content']);
-      allow update: if isDocOwner() && uidNotModified();
+      allow create: if isAuthenticated() && incomingUidMatchesUser();
+      allow update: if isDocOwner();
     }
-    
+
     match /reports/{reportId} {
       allow read: if isDocOwner();
-      allow create: if isAuthenticated() && uidMatchesUserLoggedIn() && request.resource.data.keys().hasAll(['uid', 'weekStartDate', 'productivityScore', 'burnoutRisk', 'summary']);
-      allow update: if isDocOwner() && uidNotModified();
+      allow create: if isAuthenticated() && incomingUidMatchesUser();
+      allow update: if isDocOwner();
     }
   }
 }
