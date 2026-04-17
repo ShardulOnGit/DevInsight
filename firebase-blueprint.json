@@ -1,0 +1,83 @@
+{
+  "entities": {
+    "User": {
+      "title": "User",
+      "description": "A developer using the DevInsight platform",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string", "description": "Firebase UID" },
+        "email": { "type": "string", "format": "email" },
+        "displayName": { "type": "string" },
+        "photoUrl": { "type": "string" },
+        "githubUsername": { "type": "string", "description": "Connected GitHub username" },
+        "githubConnectedAt": { "type": "string", "format": "date-time" },
+        "role": { "type": "string", "enum": ["developer", "manager"], "description": "Role for team dashboards" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["uid", "email"]
+    },
+    "DailyActivity": {
+      "title": "Daily Activity",
+      "description": "Aggegated GitHub/activity metrics for a specific day",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string", "description": "The user this activity belongs to" },
+        "date": { "type": "string", "description": "Date string in YYYY-MM-DD format" },
+        "commits": { "type": "number", "description": "Number of commits" },
+        "linesChanged": { "type": "number", "description": "Total lines added + deleted" },
+        "deepWorkHours": { "type": "number", "description": "Estimated deep work based on commit timestamps" },
+        "lateNightCommits": { "type": "number", "description": "Commits between 10PM and 5AM" },
+        "weekendCommits": { "type": "number", "description": "Commits on Saturday/Sunday" },
+        "timestamp": { "type": "string", "format": "date-time" }
+      },
+      "required": ["uid", "date", "commits", "linesChanged"]
+    },
+    "Insight": {
+      "title": "AI Insight",
+      "description": "Generated mentorship text for the user",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string" },
+        "type": { "type": "string", "enum": ["positive", "warning", "neutral"] },
+        "title": { "type": "string" },
+        "content": { "type": "string" },
+        "recommendation": { "type": "string", "description": "Actionable advice" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["uid", "type", "title", "content"]
+    },
+    "Report": {
+      "title": "Weekly Report",
+      "description": "Aggregated weekly summary",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string" },
+        "weekStartDate": { "type": "string" },
+        "productivityScore": { "type": "number" },
+        "burnoutRisk": { "type": "string", "enum": ["Low", "Medium", "High"] },
+        "summary": { "type": "string" },
+        "totalCommits": { "type": "number" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["uid", "weekStartDate", "productivityScore", "burnoutRisk", "summary"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": { "$ref": "#/entities/User" },
+      "description": "Users collection"
+    },
+    "/dailyActivities/{activityId}": {
+      "schema": { "$ref": "#/entities/DailyActivity" },
+      "description": "Daily metrics for developers, ID is typically uid_YYYY-MM-DD"
+    },
+    "/insights/{insightId}": {
+      "schema": { "$ref": "#/entities/Insight" },
+      "description": "AI-generated insights"
+    },
+    "/reports/{reportId}": {
+      "schema": { "$ref": "#/entities/Report" },
+      "description": "Weekly reports"
+    }
+  }
+}
