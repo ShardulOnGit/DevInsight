@@ -206,18 +206,7 @@ export default function LandingPage() {
                     <div className="absolute inset-0 bg-gradient-to-r from-indigo-600 to-violet-700 opacity-0 group-hover:opacity-100 transition-opacity" />
                   </motion.button>
                 </Link>
-                <Link to="/app">
-                  <motion.button
-                    whileHover={{ scale: 1.03, y: -2 }}
-                    whileTap={{ scale: 0.97 }}
-                    className="group h-14 px-8 rounded-2xl font-semibold text-base text-white glass border border-border-strong hover:border-brand/40 transition-all"
-                  >
-                    <span className="flex items-center gap-2 text-text-secondary group-hover:text-white transition-colors">
-                      View Demo Dashboard
-                      <ArrowRight className="w-4 h-4 opacity-0 group-hover:opacity-100 group-hover:translate-x-1 transition-all" />
-                    </span>
-                  </motion.button>
-                </Link>
+
               </div>
 
               {/* Social proof */}
