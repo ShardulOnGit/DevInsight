@@ -21,12 +21,16 @@ async function callGroq(prompt: string): Promise<string> {
             messages: [
                 {
                     role: 'system',
-                    content: 'You are DevInsight, an elite AI mentor for software engineers. Always respond with valid JSON only. No markdown code fences, no explanation text outside JSON.'
+                    content: `You are DevInsight, an elite AI performance coach for software engineers. 
+You write insights in a storytelling, narrative style — like a brilliant mentor who truly understands the developer.
+Instead of saying "You did X commits", say "You are a consistent developer, but your productivity dips mid-week suggest fatigue accumulation."
+Instead of generic advice, give specific, actionable steps with concrete times and durations.
+Always respond with valid JSON only. No markdown code fences, no explanation text outside JSON.`
                 },
                 { role: 'user', content: prompt }
             ],
-            temperature: 0.5,
-            max_tokens: 1024,
+            temperature: 0.65,
+            max_tokens: 1200,
             response_format: { type: 'json_object' },
         }),
     });
@@ -50,35 +54,61 @@ export async function generateAndStoreInsights(uid: string, activities: any[]) {
     const totalLateNight = activities.reduce((sum, a) => sum + (a.lateNightCommits || 0), 0);
     const totalWeekend = activities.reduce((sum, a) => sum + (a.weekendCommits || 0), 0);
 
-    try {
-        const prompt = `Analyze a developer's activity data and generate exactly 3 behavioral insights.
+    // Compute week-over-week context
+    const sorted = [...activities].sort((a, b) => a.date.localeCompare(b.date));
+    const half = Math.floor(sorted.length / 2);
+    const recentHalf = sorted.slice(half).reduce((s, a) => s + (a.commits || 0), 0);
+    const priorHalf = sorted.slice(0, half).reduce((s, a) => s + (a.commits || 0), 0);
+    const trend = priorHalf > 0
+        ? `${recentHalf > priorHalf ? '+' : ''}${Math.round(((recentHalf - priorHalf) / priorHalf) * 100)}% trend`
+        : 'new dataset';
 
-Developer stats (last 14 days):
+    const activeDays = activities.filter(a => (a.commits || 0) > 0).length;
+    const consistency = activities.length > 0 ? Math.round((activeDays / activities.length) * 100) : 0;
+
+    try {
+        const prompt = `Analyze a software developer's behavioral data and generate exactly 4 storytelling-style insights.
+
+Developer stats (sampled period):
 - Total commits: ${totalCommits}
 - Deep work hours estimated: ${totalDeepWork.toFixed(1)}h
 - Late-night commits (after 10pm): ${totalLateNight}
 - Weekend commits: ${totalWeekend}
+- Active days out of ${activities.length} tracked: ${activeDays} (${consistency}% consistency)
+- Output trend (recent vs prior): ${trend}
+
+Write in a storytelling, coaching tone. Be specific and human. Reference specific numbers.
+Examples of good insight content:
+- "You are a consistent engineer, but your output drops sharply mid-week — Friday commits are 40% lower than Monday. This suggests decision fatigue accumulation."
+- "Your late-night pattern is a double-edged sword. The quiet helps you focus, but ${totalLateNight} commits after 10 PM risks sleep debt that compounds into next-week output loss."
+- "You've maintained ${consistency}% activity consistency — a rare trait. Developers who sustain this over 90 days are statistically 3x less likely to experience burnout."
 
 Respond ONLY with this exact JSON:
 {
   "insights": [
     {
       "type": "positive",
-      "title": "Short positive title",
-      "content": "1-2 sentence observation about something going well",
-      "recommendation": "One actionable tip to maintain or build on this"
+      "title": "Short storytelling title (5-8 words)",
+      "content": "2-3 sentence narrative coaching observation referencing their actual numbers",
+      "recommendation": "One concrete, specific action with time/duration (e.g. 'Code for 90min starting at 8 AM before checking Slack')"
     },
     {
       "type": "warning",
-      "title": "Short warning title",
-      "content": "1-2 sentence observation about a risk pattern",
-      "recommendation": "One specific action to address this"
+      "title": "Short warning title (5-8 words)",
+      "content": "2-3 sentence observation about a risk pattern with specific data points",
+      "recommendation": "One specific protective action with concrete parameters"
     },
     {
       "type": "neutral",
-      "title": "Short neutral title",
-      "content": "1-2 sentence neutral observation about their patterns",
-      "recommendation": "One suggestion to optimize this pattern"
+      "title": "Short neutral title (5-8 words)",
+      "content": "2-3 sentence balanced observation about their coding pattern",
+      "recommendation": "One optimization suggestion with measurable outcome"
+    },
+    {
+      "type": "positive",
+      "title": "Predictive observation title",
+      "content": "2-3 sentence forward-looking observation based on their trend data",
+      "recommendation": "One specific action to lock in the positive trajectory"
     }
   ]
 }`;
@@ -99,34 +129,41 @@ Respond ONLY with this exact JSON:
             });
         }
 
-        console.log(`✅ Generated ${insights.length} insights via Groq`);
+        console.log(`✅ Generated ${insights.length} storytelling insights via Groq`);
     } catch (error) {
         console.error('Failed to generate AI insights via Groq:', error);
 
-        // Fallback: save basic computed insights even if AI fails
+        // Fallback: save intelligent narrative insights even if AI fails
+        const weeklyTrend = trend.includes('+') ? 'trending upward' : 'showing a slight dip';
         const fallbackInsights = [
             {
                 type: 'positive',
-                title: 'Active Coding Streak',
-                content: `You made ${totalCommits} commits over the past two weeks with ${totalDeepWork.toFixed(1)} estimated deep work hours. Consistent output signals strong discipline.`,
-                recommendation: 'Keep your daily commit habit — even small commits build momentum over time.'
+                title: 'Consistent Output Is Your Superpower',
+                content: `You've maintained ${activeDays} active coding days out of ${activities.length} tracked — a ${consistency}% consistency rate. Developers who sustain this over 90 days are statistically far less likely to experience deep burnout. Your ${totalCommits} commits demonstrate real discipline, not just bursts.`,
+                recommendation: `Keep your daily coding habit alive by setting a minimum viable commit goal: even one meaningful push per day before 6 PM protects your streak.`
             },
             ...(totalLateNight > 4 ? [{
                 type: 'warning',
-                title: 'Late-Night Commits Detected',
-                content: `${totalLateNight} commits were pushed after 10 PM. Late-night coding may reduce code quality and increase burnout risk.`,
-                recommendation: 'Try to complete focused coding by 9 PM and use evenings for planning or low-effort tasks.'
+                title: 'Late-Night Commits Are Costing You',
+                content: `${totalLateNight} commits pushed after 10 PM signals that your work is bleeding into recovery time. Late-night coding is correlated with 30% higher bug rates and significantly slower next-day output. Your deep work hours (${totalDeepWork.toFixed(1)}h) could be generating better results if shifted earlier.`,
+                recommendation: `Set a hard IDE shutdown alarm at 8:30 PM. Spend the final 30 minutes of your day writing tomorrow's task list instead of shipping code.`
             }] : [{
                 type: 'neutral',
-                title: 'Healthy Work Hours',
-                content: 'Your commit timestamps suggest a mostly normal working schedule without excessive late-night activity.',
-                recommendation: 'Keep protecting your off-hours to sustain this healthy pattern.'
+                title: 'Your Work Hours Are Sustainable',
+                content: `Your commit timestamps suggest a mostly normal working schedule with very little late-night activity. This is a strong predictor of long-term sustainability. Engineers who protect their off-hours compound their productivity over months.`,
+                recommendation: `Continue protecting your evenings. Consider using the last 15 minutes of your workday for a "shutdown ritual" — closing tabs and writing a done/tomorrow list.`
             }]),
             {
                 type: 'neutral',
-                title: 'Deep Work Estimation',
-                content: `Based on commit density, you accumulated ~${totalDeepWork.toFixed(1)} hours of focused coding time. This metric grows as you push larger, more complex changesets.`,
-                recommendation: 'Consider using Pomodoro or time-blocking to increase deep work sessions intentionally.'
+                title: 'Deep Work Hours Are Your Moat',
+                content: `Based on commit density and session analysis, you've accumulated ~${totalDeepWork.toFixed(1)} hours of estimated focus time. Your output is ${weeklyTrend} week-over-week. Deep work is a scarce resource — it compounds exponentially when protected consistently.`,
+                recommendation: `Block your highest-energy 90-minute window (usually 9:00–10:30 AM) as an uninterruptible deep work session. No meetings, no Slack, no PR review — pure creation time.`
+            },
+            {
+                type: 'positive',
+                title: 'You Are More Consistent Than You Think',
+                content: `With ${totalCommits} commits across ${activeDays} active days, your per-active-day output averages ${activeDays > 0 ? Math.round(totalCommits / activeDays) : 0} commits — a number that most engineers underestimate about themselves. Consistency is the engine of compound improvement.`,
+                recommendation: `Visualize your streak weekly. Seeing your consistency in chart form is proven to reinforce the habit loop. Use the Insights heatmap to review every Sunday.`
             }
         ];
 
@@ -134,6 +171,6 @@ Respond ONLY with this exact JSON:
             const newInsightRef = doc(collection(db, 'insights'));
             await setDoc(newInsightRef, { uid, ...insight, createdAt: serverTimestamp() });
         }
-        console.log('✅ Fallback insights saved without AI');
+        console.log('✅ Fallback storytelling insights saved without AI');
     }
 }

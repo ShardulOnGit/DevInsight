@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { NavLink, Outlet, useLocation, Navigate } from 'react-router-dom';
-import { LayoutDashboard, Lightbulb, LineChart as LineChartIcon, User, LogOut, Code2, Menu, Users, X, ChevronRight } from 'lucide-react';
+import { LayoutDashboard, Lightbulb, LineChart as LineChartIcon, User, LogOut, Code2, Menu, Users, X, ChevronRight, Dna } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { useAuth } from '@/lib/AuthContext';
@@ -10,7 +10,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 
 const navItems = [
   { name: 'Overview', href: '/app/overview', icon: LayoutDashboard, desc: 'Activity & stats' },
-  { name: 'Insights', href: '/app/insights', icon: Lightbulb, desc: 'AI analysis' },
+  { name: 'AI Insights', href: '/app/insights', icon: Lightbulb, desc: 'DNA + analysis', badge: 'DNA' },
   { name: 'Reports', href: '/app/reports', icon: LineChartIcon, desc: 'Weekly summaries' },
   { name: 'Team', href: '/app/team', icon: Users, desc: 'Benchmarks' },
   { name: 'Profile', href: '/app/profile', icon: User, desc: 'Settings & integrations' },
@@ -132,6 +132,12 @@ export default function DashboardLayout() {
                   <div className="flex-1 relative z-10">
                     <span className={isActive ? 'text-white' : ''}>{item.name}</span>
                   </div>
+                  {(item as any).badge && (
+                    <span className="text-[8px] font-bold px-1.5 py-0.5 rounded-full relative z-10"
+                      style={{ background: 'rgba(139,92,246,0.2)', border: '1px solid rgba(139,92,246,0.3)', color: '#a78bfa' }}>
+                      🧬 {(item as any).badge}
+                    </span>
+                  )}
                   {isActive && (
                     <div className="w-1.5 h-1.5 rounded-full bg-brand relative z-10 animate-pulse-glow" />
                   )}

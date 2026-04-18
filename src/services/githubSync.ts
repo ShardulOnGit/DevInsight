@@ -59,7 +59,8 @@ export async function syncGitHubActivity(uid: string, username: string, accessTo
     }
     
     // Group events by day
-    const activityByDay: Record<string, { commits: number; deepWorkHours: number; linesChanged: number; lateNightCommits: number; weekendCommits: number; commitsByHour: Record<number, number> }> = {};
+    // NOTE: commitsByHour uses string keys "h0".."h23" to survive Firestore serialization
+    const activityByDay: Record<string, { commits: number; deepWorkHours: number; linesChanged: number; lateNightCommits: number; weekendCommits: number; commitsByHour: Record<string, number> }> = {};
     const recentRepos = new Map<string, { repoName: string; commits: number; lastActive: string }>();
 
     // Default last 14 days just so we have a timeline
@@ -71,6 +72,7 @@ export async function syncGitHubActivity(uid: string, username: string, accessTo
     events.forEach((event: any) => {
       const dateStr = event.created_at.split('T')[0];
       const hour = new Date(event.created_at).getHours();
+      const hourKey = `h${hour}`; // string key e.g. "h14" for 2pm
       const dayOfWeek = new Date(event.created_at).getDay();
 
       if (!activityByDay[dateStr]) {
@@ -81,11 +83,11 @@ export async function syncGitHubActivity(uid: string, username: string, accessTo
       if (event.type === 'PushEvent') {
         const commitCount = event.payload.commits?.length || 1;
         activity.commits += commitCount;
-        activity.linesChanged += commitCount * Math.floor(Math.random() * 50 + 10); // estimate since events API doesn't give precise LOC
-        
-        // Track by hour
-        activity.commitsByHour[hour] = (activity.commitsByHour[hour] || 0) + commitCount;
-        
+        activity.linesChanged += commitCount * Math.floor(Math.random() * 50 + 10);
+
+        // Track by hour using string key
+        activity.commitsByHour[hourKey] = (activity.commitsByHour[hourKey] || 0) + commitCount;
+
         // Late night commit? (10 PM to 5 AM)
         if (hour >= 22 || hour <= 5) {
             activity.lateNightCommits += commitCount;

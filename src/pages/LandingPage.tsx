@@ -1,7 +1,7 @@
-import React, { useEffect, useRef, useState } from 'react';
+﻿import React, { useEffect, useRef, useState } from 'react';
 import { motion, useScroll, useTransform, AnimatePresence } from 'framer-motion';
 import { Link } from 'react-router-dom';
-import { Code2, Activity, Brain, Target, ArrowRight, Github, TrendingUp, ShieldAlert, Zap, BarChart3, Users, Sparkles, ChevronRight, Star, CheckCircle } from 'lucide-react';
+import { Code2, Activity, Brain, Target, ArrowRight, Github, TrendingUp, ShieldAlert, Zap, BarChart3, Users, Sparkles, ChevronRight, Star, CheckCircle, Dna, FlameKindling } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 
 // Animated counter hook
@@ -32,54 +32,56 @@ const stats = [
 
 const features = [
   {
-    icon: Target,
-    title: 'Activity Trends',
-    desc: 'Track coding frequency, consistency, and identify your most productive hours with deep GitHub analysis.',
-    color: 'from-emerald-500/20 to-teal-500/10',
-    border: 'border-emerald-500/20',
-    iconColor: 'text-emerald-400',
-    glow: 'rgba(16, 185, 129, 0.15)',
+    icon: Dna,
+    title: '🧬 Developer DNA Profile',
+    desc: 'Your unique coding personality — Night Coder 🌙, Sprint Worker ⚡, Deep Focus 🎯, or Marathoner 🏃. See your strengths, weaknesses, and optimal work style.',
+    color: 'from-violet-500/20 to-purple-500/10',
+    border: 'border-violet-500/20',
+    iconColor: 'text-violet-400',
+    glow: 'rgba(139, 92, 246, 0.18)',
+    badge: 'Signature Feature',
   },
   {
-    icon: ShieldAlert,
-    title: 'Burnout Detection',
-    desc: 'Spot irregular work patterns and sudden drops in activity before they escalate into serious problems.',
+    icon: TrendingUp,
+    title: '🔮 Next-Week Forecast',
+    desc: 'AI predicts your productivity trajectory before the week even starts. Next week your output may drop 15% - see why and how to prevent it.',
+    color: 'from-cyan-500/20 to-blue-500/10',
+    border: 'border-cyan-500/20',
+    iconColor: 'text-cyan-400',
+    glow: 'rgba(6, 182, 212, 0.15)',
+    badge: 'Predictive AI',
+  },
+  {
+    icon: FlameKindling,
+    title: '⚡ Behavior Change Detector',
+    desc: 'Detect sudden pattern shifts instantly. "Your activity dropped sharply after Tuesday — 3-day inactivity streak detected. Possible burnout onset."',
     color: 'from-rose-500/20 to-pink-500/10',
     border: 'border-rose-500/20',
     iconColor: 'text-rose-400',
     glow: 'rgba(244, 63, 94, 0.15)',
   },
   {
-    icon: Brain,
-    title: 'AI Mentorship',
-    desc: 'Receive human-like behavioral observations and personalized suggestions to optimize your daily balance.',
-    color: 'from-violet-500/20 to-indigo-500/10',
-    border: 'border-violet-500/20',
-    iconColor: 'text-violet-400',
-    glow: 'rgba(139, 92, 246, 0.15)',
-  },
-  {
-    icon: BarChart3,
-    title: 'Team Benchmarks',
-    desc: 'Compare anonymized performance across your engineering squad to surface hidden bottlenecks.',
-    color: 'from-cyan-500/20 to-blue-500/10',
-    border: 'border-cyan-500/20',
-    iconColor: 'text-cyan-400',
-    glow: 'rgba(6, 182, 212, 0.15)',
-  },
-  {
-    icon: Zap,
-    title: 'Deep Work Hours',
-    desc: 'AI estimates your real focus time by analyzing commit density, PR reviews, and session lengths.',
+    icon: ShieldAlert,
+    title: 'Burnout Prevention',
+    desc: 'Spot irregular work patterns and late-night commit spikes before they escalate. Get a recovery protocol with concrete 48-hour steps.',
     color: 'from-amber-500/20 to-orange-500/10',
     border: 'border-amber-500/20',
     iconColor: 'text-amber-400',
     glow: 'rgba(245, 158, 11, 0.15)',
   },
   {
-    icon: TrendingUp,
-    title: 'Weekly Reports',
-    desc: 'Get beautifully formatted weekly summaries written in plain English with actionable next steps.',
+    icon: Brain,
+    title: 'AI Storytelling Insights',
+    desc: '"You are a consistent developer, but productivity dips mid-week suggest fatigue accumulation. This pattern is fixable with one schedule change."',
+    color: 'from-emerald-500/20 to-teal-500/10',
+    border: 'border-emerald-500/20',
+    iconColor: 'text-emerald-400',
+    glow: 'rgba(16, 185, 129, 0.15)',
+  },
+  {
+    icon: BarChart3,
+    title: 'Team Intelligence',
+    desc: 'Compare anonymized performance, find bottlenecks, and surface hidden risks across your engineering squad. Individual tool → B2B SaaS.',
     color: 'from-brand/20 to-indigo-500/10',
     border: 'border-brand/20',
     iconColor: 'text-brand',
@@ -142,6 +144,11 @@ export default function LandingPage() {
             animate={{ opacity: 1, x: 0 }}
             className="flex items-center gap-3"
           >
+            <Link to="/pricing">
+              <Button variant="ghost" className="text-text-secondary hover:text-white transition-colors text-sm font-medium hidden sm:inline-flex">
+                Pricing
+              </Button>
+            </Link>
             <Link to="/auth">
               <Button variant="ghost" className="text-text-secondary hover:text-white transition-colors text-sm font-medium">
                 Sign In
@@ -178,16 +185,15 @@ export default function LandingPage() {
               </motion.div>
 
               <h1 className="text-6xl md:text-7xl lg:text-8xl font-black tracking-tighter text-white mb-6 leading-[0.95]">
-                Your AI Mentor
+                Predict &amp; Influence
                 <br />
-                for{' '}
                 <span className="gradient-text animate-gradient" style={{ backgroundImage: 'linear-gradient(135deg, #6366f1 0%, #8b5cf6 40%, #06b6d4 80%, #6366f1 100%)' }}>
-                  Peak Engineering
+                  Developer Performance
                 </span>
               </h1>
 
               <p className="text-xl text-text-secondary mb-10 max-w-2xl mx-auto leading-relaxed font-light">
-                Deeply analyze your coding patterns, predict productivity trends, and detect burnout before it happens. Connect your GitHub and let AI optimize your workflow.
+                Don't just track what happened — know what's coming. AI-powered behavioral intelligence that predicts next-week productivity, detects burnout signals, and creates your unique Developer DNA profile.
               </p>
 
               <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
@@ -290,12 +296,12 @@ export default function LandingPage() {
             viewport={{ once: true }}
             className="text-center mb-16"
           >
-            <p className="text-sm font-semibold text-brand uppercase tracking-widest mb-4">Everything You Need</p>
+            <p className="text-sm font-semibold text-brand uppercase tracking-widest mb-4">AI Intelligence Platform</p>
             <h2 className="text-4xl md:text-5xl font-bold text-white tracking-tight mb-4">
-              Built for high-output engineers
+              Not just analytics — <em className="not-italic gradient-text">intelligence</em>
             </h2>
             <p className="text-text-secondary text-lg max-w-2xl mx-auto">
-              Stop flying blind. Get data-driven clarity on how you actually work and where your best improvements lie.
+              Every insight has a story. Every pattern has a reason. DevInsight speaks it in plain language so you can act immediately.
             </p>
           </motion.div>
 
@@ -344,10 +350,10 @@ export default function LandingPage() {
                   <Brain className="w-8 h-8 text-white" />
                 </div>
                 <h2 className="text-4xl font-bold text-white mb-4 tracking-tight">
-                  Ready to understand yourself better?
+                  Start predicting. Stop reacting.
                 </h2>
                 <p className="text-text-secondary text-lg mb-8 max-w-xl mx-auto">
-                  Join thousands of developers who use DevInsight to stay sharp, prevent burnout, and ship better code.
+                  Join thousands of developers who use DevInsight to predict burnout, understand their DNA, and ship better code every week.
                 </p>
                 <div className="flex flex-col sm:flex-row gap-4 justify-center">
                   <Link to="/auth">
@@ -358,6 +364,15 @@ export default function LandingPage() {
                       style={{ background: 'linear-gradient(135deg, #6366f1, #8b5cf6)' }}
                     >
                       Start for Free — Connect GitHub
+                    </motion.button>
+                  </Link>
+                  <Link to="/pricing">
+                    <motion.button
+                      whileHover={{ scale: 1.03, y: -2 }}
+                      whileTap={{ scale: 0.97 }}
+                      className="h-14 px-10 rounded-2xl font-semibold text-base text-white/80 border border-white/15 hover:border-brand/40 hover:text-white transition-all"
+                    >
+                      View Pricing
                     </motion.button>
                   </Link>
                 </div>
@@ -378,6 +393,7 @@ export default function LandingPage() {
             <span>DevInsight AI © 2026</span>
           </div>
           <div className="flex items-center gap-6">
+            <Link to="/pricing" className="hover:text-text-secondary transition-colors">Pricing</Link>
             <a href="#" className="hover:text-text-secondary transition-colors">Privacy</a>
             <a href="#" className="hover:text-text-secondary transition-colors">Terms</a>
             <a href="#" className="hover:text-text-secondary transition-colors">Contact</a>
@@ -409,7 +425,7 @@ function StatCounter({ label, value, suffix, icon: Icon, started, index }: any) 
   );
 }
 
-function FeatureCard({ icon: Icon, title, desc, color, border, iconColor, glow, index }: any) {
+function FeatureCard({ icon: Icon, title, desc, color, border, iconColor, glow, badge, index }: any) {
   const [hovered, setHovered] = useState(false);
   return (
     <motion.div
@@ -423,6 +439,12 @@ function FeatureCard({ icon: Icon, title, desc, color, border, iconColor, glow, 
       className={`relative group p-7 rounded-2xl border bg-bg-surface/60 backdrop-blur-sm transition-all duration-300 card-lift ${border} hover:border-opacity-60`}
       style={{ boxShadow: hovered ? `0 0 30px ${glow}, 0 20px 40px rgba(0,0,0,0.3)` : '0 4px 20px rgba(0,0,0,0.2)' }}
     >
+      {badge && (
+        <span className="absolute top-4 right-4 text-[9px] font-bold px-2 py-0.5 rounded-full"
+          style={{ background: 'rgba(99,102,241,0.15)', border: '1px solid rgba(99,102,241,0.3)', color: '#818cf8' }}>
+          {badge}
+        </span>
+      )}
       <div className={`w-12 h-12 rounded-xl bg-gradient-to-br ${color} border ${border} flex items-center justify-center mb-5 transition-transform duration-300 group-hover:scale-110`}>
         <Icon className={`w-6 h-6 ${iconColor}`} />
       </div>

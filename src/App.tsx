@@ -6,6 +6,7 @@
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import LandingPage from './pages/LandingPage';
 import AuthPage from './pages/AuthPage';
+import PricingPage from './pages/PricingPage';
 import DashboardLayout from './layouts/DashboardLayout';
 import DashboardOverview from './pages/DashboardOverview';
 import InsightsPage from './pages/InsightsPage';
@@ -19,6 +20,7 @@ export default function App() {
       <Routes>
         <Route path="/" element={<LandingPage />} />
         <Route path="/auth" element={<AuthPage />} />
+        <Route path="/pricing" element={<PricingPage />} />
         
         {/* Protected Dashboard Routes */}
         <Route path="/app" element={<DashboardLayout />}>
