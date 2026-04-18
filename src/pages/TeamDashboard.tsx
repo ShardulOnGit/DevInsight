@@ -1,11 +1,12 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
 import {
-  Users, Activity, AlertTriangle, ShieldCheck, TrendingUp,
-  BarChart2, Zap, Target, Trophy, Brain, FlameKindling
+  Users, AlertTriangle, ShieldCheck, TrendingUp,
+  BarChart2, Zap, Trophy, FlameKindling, RefreshCw,
+  Github, FileCode, Info
 } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell, AreaChart, Area } from 'recharts';
 import { useAuth } from '@/lib/AuthContext';
-import { collection, onSnapshot, query } from 'firebase/firestore';
+import { collection, onSnapshot, query, doc, getDoc } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import { format, parseISO, subDays } from 'date-fns';
 import { motion } from 'framer-motion';
@@ -20,36 +21,133 @@ const itemVariants = {
   show: { opacity: 1, y: 0, transition: { type: 'spring', stiffness: 300, damping: 24 } }
 };
 
+/**
+ * Fetch GitHub repo contributor usernames for the current user.
+ * Returns a Set of lowercase GitHub usernames who contributed to their repos.
+ */
+async function fetchCollaboratorUsernames(
+  githubUsername: string,
+  accessToken?: string
+): Promise<Set<string>> {
+  const headers: Record<string, string> = accessToken
+    ? { Authorization: `token ${accessToken}` }
+    : {};
+
+  const collaborators = new Set<string>();
+  collaborators.add(githubUsername.toLowerCase()); // always include self
+
+  try {
+    // Get repos the user owns or contributes to (up to 30, sorted by recent push)
+    const reposRes = await fetch(
+      `https://api.github.com/users/${githubUsername}/repos?sort=pushed&per_page=30&type=owner`,
+      { headers }
+    );
+
+    if (!reposRes.ok) return collaborators;
+    const repos: any[] = await reposRes.json();
+
+    // For each repo, fetch contributors (limit to first 10 repos to avoid rate limit)
+    const topRepos = repos.slice(0, 10);
+    await Promise.allSettled(
+      topRepos.map(async (repo) => {
+        try {
+          const contribRes = await fetch(
+            `https://api.github.com/repos/${repo.full_name}/contributors?per_page=50`,
+            { headers }
+          );
+          if (!contribRes.ok) return;
+          const contributors: any[] = await contribRes.json();
+          contributors.forEach((c) => {
+            if (c.login) collaborators.add(c.login.toLowerCase());
+          });
+        } catch {}
+      })
+    );
+  } catch {}
+
+  return collaborators;
+}
+
 export default function TeamDashboard() {
-  const { user } = useAuth();
+  const { user, userData } = useAuth();
   const [teamVelocityData, setTeamVelocityData] = useState<any[]>([]);
   const [teamBurnoutData, setTeamBurnoutData] = useState<any[]>([]);
   const [bottlenecks, setBottlenecks] = useState<any[]>([]);
   const [stats, setStats] = useState({ avgProductivity: 0, totalDevs: 0, highRiskCount: 0, teamScore: 0 });
-  const [userNames, setUserNames] = useState<Record<string, string>>({});
+  const [collaboratorUids, setCollaboratorUids] = useState<Set<string> | null>(null); // null = loading
+  const [collaboratorNames, setCollaboratorNames] = useState<Record<string, string>>({});
+  const [loadingCollaborators, setLoadingCollaborators] = useState(true);
+  const [noGitHub, setNoGitHub] = useState(false);
 
-  // Fetch display names from users collection
+  // Step 1: Resolve collaborator UIDs from GitHub API + Firestore users
   useEffect(() => {
     if (!user) return;
-    const usersUnsub = onSnapshot(collection(db, 'users'), (snap) => {
+
+    async function resolveCollaborators() {
+      setLoadingCollaborators(true);
+
+      // Get current user's GitHub info from Firestore
+      const userDoc = await getDoc(doc(db, 'users', user!.uid));
+      const profile = userDoc.data() || {};
+      const githubUsername: string = profile.githubUsername || userData?.githubUsername || '';
+      const accessToken: string = profile.githubAccessToken || '';
+
+      if (!githubUsername) {
+        setNoGitHub(true);
+        setLoadingCollaborators(false);
+        setCollaboratorUids(new Set([user!.uid])); // show only self
+        return;
+      }
+
+      // Fetch GitHub collaborator usernames
+      const ghCollaborators = await fetchCollaboratorUsernames(githubUsername, accessToken);
+
+      // Map GitHub usernames → Firestore UIDs by scanning users collection
+      const colUids = new Set<string>();
       const names: Record<string, string> = {};
-      snap.forEach(doc => {
-        const d = doc.data();
-        names[doc.id] = d.displayName || d.githubUsername || `Dev-${doc.id.slice(0, 6)}`;
-      });
-      setUserNames(names);
-    });
-    return () => usersUnsub();
-  }, [user]);
 
+      // Always include current user
+      colUids.add(user!.uid);
+      names[user!.uid] = profile.displayName || githubUsername;
+
+      // Scan all DevInsight users and include those whose githubUsername is in collaborator set
+      const usersSnap = await new Promise<any>((resolve) => {
+        const unsub = onSnapshot(collection(db, 'users'), (snap) => {
+          resolve(snap);
+          unsub();
+        });
+      });
+
+      usersSnap.forEach((docSnap: any) => {
+        const d = docSnap.data();
+        const gh = (d.githubUsername || '').toLowerCase();
+        if (gh && ghCollaborators.has(gh)) {
+          colUids.add(docSnap.id);
+          names[docSnap.id] = d.displayName || d.githubUsername || `Dev-${docSnap.id.slice(0, 6)}`;
+        }
+      });
+
+      setCollaboratorUids(colUids);
+      setCollaboratorNames(names);
+      setLoadingCollaborators(false);
+    }
+
+    resolveCollaborators();
+  }, [user, userData?.githubUsername]);
+
+  // Step 2: Listen to dailyActivities, filtered to collaborator UIDs only
   useEffect(() => {
-    if (!user) return;
+    if (!user || collaboratorUids === null) return;
+
     const q = query(collection(db, 'dailyActivities'));
     const unsubscribe = onSnapshot(q, (snapshot) => {
       let allActivities: any[] = [];
       let uniqueDevs = new Set<string>();
+
       snapshot.forEach(doc => {
         const data = doc.data();
+        // ✅ Only include activities from known collaborators
+        if (!collaboratorUids.has(data.uid)) return;
         allActivities.push(data);
         if (data.uid) uniqueDevs.add(data.uid);
       });
@@ -88,11 +186,9 @@ export default function TeamDashboard() {
         else if (metrics.lateNight > 4 || metrics.weekend > 5) riskScore = 60;
         if (riskScore >= 75) riskCount++;
 
-        // Use real name from userNames state, fallback to short uid
-        const devLabel = userNames[uid] || `Dev-${uid.slice(0, 6)}`;
+        const devLabel = collaboratorNames[uid] || `Dev-${uid.slice(0, 6)}`;
         burnoutChart.push({ name: devLabel, risk: riskScore, score: prodScore, uid });
 
-        // Bottleneck detection
         if (riskScore >= 75) {
           detectedBottlenecks.push({
             dev: devLabel,
@@ -123,11 +219,28 @@ export default function TeamDashboard() {
         teamScore: Math.min(100, teamScore),
       });
     });
+
     return () => unsubscribe();
-  }, [user, userNames]); // re-run when names load so chart labels update
+  }, [user, collaboratorUids, collaboratorNames]);
 
   const isHealthy = stats.highRiskCount === 0;
   const teamScoreColor = stats.teamScore >= 70 ? '#10b981' : stats.teamScore >= 40 ? '#f59e0b' : '#f43f5e';
+
+  // Loading state while fetching GitHub collaborators
+  if (loadingCollaborators) {
+    return (
+      <div className="flex flex-col items-center justify-center min-h-[400px] gap-4 text-center">
+        <div className="w-14 h-14 rounded-2xl flex items-center justify-center animate-pulse"
+          style={{ background: 'rgba(99,102,241,0.1)', border: '1px solid rgba(99,102,241,0.2)' }}>
+          <Github className="w-7 h-7 text-brand" />
+        </div>
+        <p className="text-white font-semibold">Loading your GitHub collaborators…</p>
+        <p className="text-text-muted text-sm max-w-xs">
+          Fetching contributors from your repos to build your team view.
+        </p>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-8">
@@ -145,17 +258,42 @@ export default function TeamDashboard() {
             <h1 className="text-2xl font-black text-white tracking-tight">Team Intelligence</h1>
           </div>
           <p className="text-text-secondary text-sm ml-12">
-            Aggregated health, velocity, and bottleneck analysis for your engineering squad.
+            Showing GitHub collaborators from your repos who also use DevInsight.
           </p>
         </div>
-        <motion.span
-          whileHover={{ scale: 1.02 }}
-          className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full text-xs font-semibold self-start md:self-auto"
-          style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.08)', color: '#94a3b8' }}
-        >
-          <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
-          Anonymized Data
-        </motion.span>
+        <div className="flex items-center gap-3 self-start md:self-auto">
+          {noGitHub && (
+            <span className="text-xs px-3 py-1.5 rounded-full"
+              style={{ background: 'rgba(245,158,11,0.1)', border: '1px solid rgba(245,158,11,0.2)', color: '#fbbf24' }}>
+              Connect GitHub to see real team data
+            </span>
+          )}
+          <motion.span
+            whileHover={{ scale: 1.02 }}
+            className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full text-xs font-semibold"
+            style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.08)', color: '#94a3b8' }}
+          >
+            <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
+            GitHub Collaborators Only
+          </motion.span>
+        </div>
+      </motion.div>
+
+      {/* Info banner: how collaborators are resolved */}
+      <motion.div
+        initial={{ opacity: 0, y: 8 }}
+        animate={{ opacity: 1, y: 0 }}
+        className="flex items-start gap-3 p-4 rounded-xl"
+        style={{ background: 'rgba(99,102,241,0.06)', border: '1px solid rgba(99,102,241,0.15)' }}
+      >
+        <Info className="w-4 h-4 text-brand shrink-0 mt-0.5" />
+        <p className="text-xs text-text-secondary leading-relaxed">
+          <span className="text-white font-semibold">How this works: </span>
+          DevInsight fetched contributors from your GitHub repos and matched them against DevInsight accounts.
+          Only those matched collaborators appear here —{' '}
+          <span className="text-brand font-medium">{stats.totalDevs} matched account{stats.totalDevs !== 1 ? 's' : ''}</span>
+          {collaboratorUids && collaboratorUids.size > 1 ? ` out of ${collaboratorUids.size} GitHub collaborators found.` : '.'}
+        </p>
       </motion.div>
 
       {/* Quick Stats Row */}
@@ -166,7 +304,7 @@ export default function TeamDashboard() {
         className="grid grid-cols-2 md:grid-cols-4 gap-4"
       >
         <motion.div variants={itemVariants}>
-          <QuickStat label="Active Developers" value={stats.totalDevs} suffix="" icon={Users} color="#6366f1" />
+          <QuickStat label="Matched Devs" value={stats.totalDevs} suffix="" icon={Users} color="#6366f1" />
         </motion.div>
         <motion.div variants={itemVariants}>
           <QuickStat label="Avg Productivity" value={stats.avgProductivity} suffix="/100" icon={Zap} color="#10b981" />
@@ -198,6 +336,34 @@ export default function TeamDashboard() {
           </div>
         </motion.div>
       </motion.div>
+
+      {/* Empty state: no collaborators matched */}
+      {stats.totalDevs === 0 && !loadingCollaborators && (
+        <motion.div
+          initial={{ opacity: 0, y: 10 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="rounded-2xl border border-border-subtle glass-elevated p-12 text-center"
+        >
+          <div className="w-14 h-14 rounded-2xl mx-auto mb-4 flex items-center justify-center"
+            style={{ background: 'rgba(99,102,241,0.08)', border: '1px solid rgba(99,102,241,0.2)' }}>
+            <Github className="w-7 h-7 text-brand/60" />
+          </div>
+          <h3 className="text-lg font-bold text-white mb-2">No Collaborators Using DevInsight Yet</h3>
+          <p className="text-sm text-text-muted max-w-sm mx-auto leading-relaxed">
+            We found your GitHub repo contributors but none of them have a DevInsight account yet.
+            Share DevInsight with your team to unlock the team intelligence features.
+          </p>
+          <div className="mt-6 flex justify-center gap-3">
+            <a
+              href="/app/profile"
+              className="px-4 py-2 rounded-xl text-sm font-semibold border transition-all"
+              style={{ background: 'rgba(99,102,241,0.1)', border: '1px solid rgba(99,102,241,0.25)', color: '#818cf8' }}
+            >
+              Check GitHub Connection →
+            </a>
+          </div>
+        </motion.div>
+      )}
 
       {/* Bottleneck Detector */}
       {bottlenecks.length > 0 && (
@@ -232,29 +398,27 @@ export default function TeamDashboard() {
         </motion.div>
       )}
 
-      {/* Charts Grid */}
-      <motion.div
-        variants={container}
-        initial="hidden"
-        animate="show"
-        className="grid grid-cols-1 md:grid-cols-3 gap-5"
-      >
-        {/* Burnout Risk Chart */}
-        <motion.div variants={itemVariants} className="md:col-span-2">
-          <div className="rounded-2xl border border-border-subtle glass-elevated p-5" style={{ minHeight: '340px' }}>
-            <h3 className="text-sm font-bold text-white mb-1">Team Burnout Risk Matrix</h3>
-            <p className="text-xs text-text-muted mb-5">Burnout risk score per squad member. Red = immediate action needed.</p>
-            <div className="h-[240px]">
-              {teamBurnoutData.length === 0 ? (
-                <div className="h-full flex items-center justify-center text-sm text-text-muted">
-                  No team data — sync GitHub activity first.
-                </div>
-              ) : (
+      {/* Charts */}
+      {stats.totalDevs > 0 && (
+        <motion.div
+          variants={container}
+          initial="hidden"
+          animate="show"
+          className="grid grid-cols-1 md:grid-cols-3 gap-5"
+        >
+          {/* Burnout Risk Chart */}
+          <motion.div variants={itemVariants} className="md:col-span-2">
+            <div className="rounded-2xl border border-border-subtle glass-elevated p-5" style={{ minHeight: '340px' }}>
+              <h3 className="text-sm font-bold text-white mb-1">Team Burnout Risk Matrix</h3>
+              <p className="text-xs text-text-muted mb-5">
+                {teamBurnoutData.length} collaborator{teamBurnoutData.length !== 1 ? 's' : ''} · Red = immediate action needed.
+              </p>
+              <div className="h-[240px]">
                 <ResponsiveContainer width="100%" height="100%">
                   <BarChart data={teamBurnoutData} layout="vertical" margin={{ top: 5, right: 20, left: 5, bottom: 0 }}>
                     <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="rgba(255,255,255,0.04)" />
                     <XAxis type="number" stroke="#4b5568" fontSize={11} tickLine={false} axisLine={false} domain={[0, 100]} />
-                    <YAxis dataKey="name" type="category" stroke="#4b5568" fontSize={11} tickLine={false} axisLine={false} />
+                    <YAxis dataKey="name" type="category" stroke="#4b5568" fontSize={11} tickLine={false} axisLine={false} width={90} />
                     <Tooltip
                       cursor={{ fill: 'rgba(99,102,241,0.05)' }}
                       contentStyle={{ backgroundColor: '#131626', borderColor: '#2d3055', borderRadius: '12px', padding: '10px 14px' }}
@@ -273,108 +437,100 @@ export default function TeamDashboard() {
                     </Bar>
                   </BarChart>
                 </ResponsiveContainer>
-              )}
-            </div>
-          </div>
-        </motion.div>
-
-        {/* Manager Insights */}
-        <motion.div variants={itemVariants} className="md:col-span-1">
-          <div
-            className="h-full rounded-2xl p-5 flex flex-col"
-            style={{
-              background: isHealthy
-                ? 'linear-gradient(135deg, rgba(16,185,129,0.08), rgba(6,182,212,0.05))'
-                : 'linear-gradient(135deg, rgba(244,63,94,0.08), rgba(245,158,11,0.05))',
-              border: `1px solid ${isHealthy ? 'rgba(16,185,129,0.2)' : 'rgba(244,63,94,0.2)'}`,
-              minHeight: '340px',
-            }}
-          >
-            <div className="flex items-center gap-2 mb-4">
-              {isHealthy ? <ShieldCheck className="w-5 h-5 text-emerald-400" /> : <AlertTriangle className="w-5 h-5 text-rose-400" />}
-              <h3 className="text-sm font-bold text-white">Manager Insights</h3>
-            </div>
-
-            <div className="space-y-3 flex-1">
-              {/* Team narrative */}
-              <div className="p-3 rounded-xl" style={{ background: 'rgba(0,0,0,0.15)', border: '1px solid rgba(255,255,255,0.05)' }}>
-                <p className="text-xs text-text-secondary leading-relaxed">
-                  {stats.totalDevs === 0
-                    ? 'No team data yet. Sync GitHub activity across the team first.'
-                    : isHealthy && stats.avgProductivity >= 50
-                    ? `Your ${stats.totalDevs}-dev squad is in optimal state. Average productivity is ${stats.avgProductivity}/100 — steady delivery without burnout signals. Maintain current sprint pace.`
-                    : stats.highRiskCount > 0
-                    ? `${stats.highRiskCount} of ${stats.totalDevs} engineers show elevated burnout signals. Consider redistributing workload before the next sprint planning session.`
-                    : `Team is functional but output is below peak (avg ${stats.avgProductivity}/100). Surface blockers in this week's retrospective.`}
-                </p>
-              </div>
-
-              {stats.highRiskCount > 0 && (
-                <div className="p-3 rounded-xl" style={{ background: 'rgba(244,63,94,0.08)', border: '1px solid rgba(244,63,94,0.2)' }}>
-                  <p className="text-xs font-bold text-rose-300 mb-1">⚠ Load Balance Alert</p>
-                  <p className="text-xs text-rose-200/80 leading-relaxed">
-                    {stats.highRiskCount} engineer(s) show high weekend activity patterns. Consider offloading tasks before the next sprint begins.
-                  </p>
-                </div>
-              )}
-
-              {stats.avgProductivity < 40 && stats.totalDevs > 0 && (
-                <div className="p-3 rounded-xl" style={{ background: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.2)' }}>
-                  <p className="text-xs font-bold text-amber-300 mb-1">↓ Low Team Output</p>
-                  <p className="text-xs text-amber-200/80 leading-relaxed">
-                    Team productivity is below threshold. Check for environment issues, unclear tickets, or unresolved blockers.
-                  </p>
-                </div>
-              )}
-
-              {isHealthy && stats.totalDevs > 0 && (
-                <div className="p-3 rounded-xl" style={{ background: 'rgba(16,185,129,0.08)', border: '1px solid rgba(16,185,129,0.2)' }}>
-                  <p className="text-xs font-bold text-emerald-300 mb-1">✓ Healthy Squad</p>
-                  <p className="text-xs text-emerald-200/80 leading-relaxed">
-                    No burnout flags across the team. This is a strong foundation — protect it by keeping sprint scope realistic.
-                  </p>
-                </div>
-              )}
-            </div>
-          </div>
-        </motion.div>
-
-        {/* Velocity Chart — full width */}
-        <motion.div variants={itemVariants} className="md:col-span-3">
-          <div className="rounded-2xl border border-border-subtle glass-elevated p-5" style={{ height: '280px' }}>
-            <div className="flex items-center justify-between mb-4">
-              <div>
-                <h3 className="text-sm font-bold text-white flex items-center gap-2">
-                  <TrendingUp className="w-4 h-4 text-brand" /> Aggregated Team Velocity
-                </h3>
-                <p className="text-xs text-text-muted mt-0.5">Combined output across all connected engineers — last 14 days.</p>
               </div>
             </div>
-            <div className="h-[180px]">
-              <ResponsiveContainer width="100%" height="100%">
-                <AreaChart data={teamVelocityData} margin={{ top: 5, right: 5, left: -25, bottom: 0 }}>
-                  <defs>
-                    <linearGradient id="colorVelocity" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor="rgba(99,102,241,1)" stopOpacity={0.2} />
-                      <stop offset="95%" stopColor="rgba(99,102,241,1)" stopOpacity={0} />
-                    </linearGradient>
-                  </defs>
-                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="rgba(255,255,255,0.04)" />
-                  <XAxis dataKey="day" stroke="#4b5568" fontSize={11} tickLine={false} axisLine={false} />
-                  <YAxis stroke="#4b5568" fontSize={11} tickLine={false} axisLine={false} />
-                  <Tooltip
-                    contentStyle={{ backgroundColor: '#131626', borderColor: '#2d3055', borderRadius: '12px', padding: '10px 14px' }}
-                    itemStyle={{ color: '#f1f5f9' }}
-                    cursor={{ stroke: 'rgba(99,102,241,0.3)', strokeWidth: 1 }}
-                  />
-                  <Area type="monotone" dataKey="velocity" stroke="rgba(99,102,241,1)" strokeWidth={2} fillOpacity={1} fill="url(#colorVelocity)"
-                    activeDot={{ r: 5, fill: '#131626', stroke: '#6366f1', strokeWidth: 2 }} />
-                </AreaChart>
-              </ResponsiveContainer>
+          </motion.div>
+
+          {/* Manager Insights */}
+          <motion.div variants={itemVariants} className="md:col-span-1">
+            <div
+              className="h-full rounded-2xl p-5 flex flex-col"
+              style={{
+                background: isHealthy
+                  ? 'linear-gradient(135deg, rgba(16,185,129,0.08), rgba(6,182,212,0.05))'
+                  : 'linear-gradient(135deg, rgba(244,63,94,0.08), rgba(245,158,11,0.05))',
+                border: `1px solid ${isHealthy ? 'rgba(16,185,129,0.2)' : 'rgba(244,63,94,0.2)'}`,
+                minHeight: '340px',
+              }}
+            >
+              <div className="flex items-center gap-2 mb-4">
+                {isHealthy ? <ShieldCheck className="w-5 h-5 text-emerald-400" /> : <AlertTriangle className="w-5 h-5 text-rose-400" />}
+                <h3 className="text-sm font-bold text-white">Manager Insights</h3>
+              </div>
+
+              <div className="space-y-3 flex-1">
+                <div className="p-3 rounded-xl" style={{ background: 'rgba(0,0,0,0.15)', border: '1px solid rgba(255,255,255,0.05)' }}>
+                  <p className="text-xs text-text-secondary leading-relaxed">
+                    {stats.totalDevs === 0
+                      ? 'No collaborator data yet.'
+                      : isHealthy && stats.avgProductivity >= 50
+                      ? `Your ${stats.totalDevs}-dev squad is in optimal state. Average productivity is ${stats.avgProductivity}/100 — steady delivery without burnout signals.`
+                      : stats.highRiskCount > 0
+                      ? `${stats.highRiskCount} of ${stats.totalDevs} engineers show elevated burnout signals. Consider redistributing workload before the next sprint.`
+                      : `Team is functional but output is below peak (avg ${stats.avgProductivity}/100). Surface blockers in this week's retrospective.`}
+                  </p>
+                </div>
+
+                {stats.highRiskCount > 0 && (
+                  <div className="p-3 rounded-xl" style={{ background: 'rgba(244,63,94,0.08)', border: '1px solid rgba(244,63,94,0.2)' }}>
+                    <p className="text-xs font-bold text-rose-300 mb-1">⚠ Load Balance Alert</p>
+                    <p className="text-xs text-rose-200/80 leading-relaxed">
+                      {stats.highRiskCount} engineer(s) show high weekend activity. Consider offloading tasks before the next sprint.
+                    </p>
+                  </div>
+                )}
+
+                {isHealthy && stats.totalDevs > 0 && (
+                  <div className="p-3 rounded-xl" style={{ background: 'rgba(16,185,129,0.08)', border: '1px solid rgba(16,185,129,0.2)' }}>
+                    <p className="text-xs font-bold text-emerald-300 mb-1">✓ Healthy Squad</p>
+                    <p className="text-xs text-emerald-200/80 leading-relaxed">
+                      No burnout flags across the team. Protect this momentum by keeping sprint scope realistic.
+                    </p>
+                  </div>
+                )}
+              </div>
             </div>
-          </div>
+          </motion.div>
+
+          {/* Velocity Chart — full width */}
+          <motion.div variants={itemVariants} className="md:col-span-3">
+            <div className="rounded-2xl border border-border-subtle glass-elevated p-5" style={{ height: '280px' }}>
+              <div className="flex items-center justify-between mb-4">
+                <div>
+                  <h3 className="text-sm font-bold text-white flex items-center gap-2">
+                    <TrendingUp className="w-4 h-4 text-brand" /> Aggregated Team Velocity
+                  </h3>
+                  <p className="text-xs text-text-muted mt-0.5">
+                    Combined commits across {stats.totalDevs} GitHub collaborator{stats.totalDevs !== 1 ? 's' : ''} — last 14 days.
+                  </p>
+                </div>
+              </div>
+              <div className="h-[180px]">
+                <ResponsiveContainer width="100%" height="100%">
+                  <AreaChart data={teamVelocityData} margin={{ top: 5, right: 5, left: -25, bottom: 0 }}>
+                    <defs>
+                      <linearGradient id="colorVelocity" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="5%" stopColor="rgba(99,102,241,1)" stopOpacity={0.2} />
+                        <stop offset="95%" stopColor="rgba(99,102,241,1)" stopOpacity={0} />
+                      </linearGradient>
+                    </defs>
+                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="rgba(255,255,255,0.04)" />
+                    <XAxis dataKey="day" stroke="#4b5568" fontSize={11} tickLine={false} axisLine={false} />
+                    <YAxis stroke="#4b5568" fontSize={11} tickLine={false} axisLine={false} />
+                    <Tooltip
+                      contentStyle={{ backgroundColor: '#131626', borderColor: '#2d3055', borderRadius: '12px', padding: '10px 14px' }}
+                      itemStyle={{ color: '#f1f5f9' }}
+                      cursor={{ stroke: 'rgba(99,102,241,0.3)', strokeWidth: 1 }}
+                    />
+                    <Area type="monotone" dataKey="velocity" stroke="rgba(99,102,241,1)" strokeWidth={2} fillOpacity={1} fill="url(#colorVelocity)"
+                      activeDot={{ r: 5, fill: '#131626', stroke: '#6366f1', strokeWidth: 2 }} />
+                  </AreaChart>
+                </ResponsiveContainer>
+              </div>
+            </div>
+          </motion.div>
         </motion.div>
-      </motion.div>
+      )}
     </div>
   );
 }
