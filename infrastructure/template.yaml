@@ -1,0 +1,111 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+
+Description: DevInsight Guardian - Autonomous AI Engineering Manager
+
+# ─── Parameters ────────────────────────────────────────────────────────────────
+# Set actual values in samconfig.toml → parameter_overrides
+# NEVER commit real secrets here.
+Parameters:
+  FirebaseProjectId:
+    Type: String
+    Default: REPLACE_ME
+  FirebaseClientEmail:
+    Type: String
+    Default: REPLACE_ME
+  FirebasePrivateKey:
+    Type: String
+    NoEcho: true
+    Default: REPLACE_ME
+  GroqApiKey:
+    Type: String
+    NoEcho: true
+    Default: REPLACE_ME
+  GitHubToken:
+    Type: String
+    NoEcho: true
+    Default: ''
+
+# ─── Globals ───────────────────────────────────────────────────────────────────
+Globals:
+  Function:
+    Runtime: nodejs20.x
+    Architectures: [arm64]
+    MemorySize: 512
+    Timeout: 300
+
+# ─── Resources ─────────────────────────────────────────────────────────────────
+Resources:
+
+  # EventBridge Scheduler needs its own role to invoke Lambda.
+  # This is the only IAM role we create manually.
+  SchedulerRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: scheduler.amazonaws.com
+            Action: sts:AssumeRole
+            Condition:
+              StringEquals:
+                aws:SourceAccount: !Ref AWS::AccountId
+      Policies:
+        - PolicyName: InvokeLambda
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action: lambda:InvokeFunction
+                Resource: !GetAtt GuardianFunction.Arn
+
+  # Lambda function — SAM auto-creates an execution role with
+  # AWSLambdaBasicExecutionRole (CloudWatch Logs write access only).
+  GuardianFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      # CodeUri points to the project root so esbuild can resolve
+      # both lambda/guardian/ and shared/ in a single build context.
+      FunctionName: devinsight-guardian
+      Handler: lambda/guardian/index.handler
+      CodeUri: ../
+      Description: DevInsight Guardian - Autonomous AI Engineering Manager
+      Policies:
+        - AWSLambdaBasicExecutionRole
+      Environment:
+        Variables:
+          FIREBASE_PROJECT_ID:    !Ref FirebaseProjectId
+          FIREBASE_CLIENT_EMAIL:  !Ref FirebaseClientEmail
+          FIREBASE_PRIVATE_KEY:   !Ref FirebasePrivateKey
+          GROQ_API_KEY:           !Ref GroqApiKey
+          GITHUB_TOKEN:           !Ref GitHubToken
+          EMAIL_ENABLED:          'false'
+          DASHBOARD_URL:          'https://devinsight.vercel.app'
+    Metadata:
+      BuildMethod: esbuild
+      BuildProperties:
+        Minify: true
+        Target: es2022
+        EntryPoints: [lambda/guardian/index.ts]
+        External: ['@aws-sdk/*']
+
+  # EventBridge Scheduler — triggers daily at 7:00 AM IST
+  GuardianSchedule:
+    Type: AWS::Scheduler::Schedule
+    Properties:
+      Name: devinsight-morning-brief
+      Description: Triggers DevInsight Guardian at 7:00 AM IST daily
+      ScheduleExpression: 'cron(0 7 * * ? *)'
+      ScheduleExpressionTimezone: Asia/Kolkata
+      FlexibleTimeWindow:
+        Mode: 'OFF'
+      State: ENABLED
+      Target:
+        Arn: !GetAtt GuardianFunction.Arn
+        RoleArn: !GetAtt SchedulerRole.Arn
+
+Outputs:
+  GuardianFunctionArn:
+    Value: !GetAtt GuardianFunction.Arn

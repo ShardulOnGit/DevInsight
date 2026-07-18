@@ -1,0 +1,40 @@
+# DevInsight Guardian — SAM Deployment Configuration
+#
+# Before deploying, fill in the parameter_overrides below with your real values.
+# NEVER commit real secrets — this file is safe to commit as-is (all placeholders).
+#
+# Deploy with:
+#   cd infrastructure
+#   sam build
+#   sam deploy
+
+version = 0.1
+
+[default.global.parameters]
+stack_name    = "devinsight-guardian"
+region        = "ap-south-1"
+template_file = "template.yaml"
+
+[default.build.parameters]
+use_container = false
+template_file = "template.yaml"
+
+[default.deploy.parameters]
+stack_name              = "devinsight-guardian"
+s3_prefix               = "devinsight-guardian"
+region                  = "ap-south-1"
+confirm_changeset       = false
+capabilities            = "CAPABILITY_IAM"
+disable_rollback        = false
+fail_on_empty_changeset = false
+
+# ── Fill these in before deploying ──────────────────────────────────────────
+# FirebasePrivateKey: paste the private_key from your Firebase service account JSON.
+# Replace literal newlines with \n (e.g. "-----BEGIN RSA PRIVATE KEY-----\nMIIE...")
+parameter_overrides = [
+  "FirebaseProjectId=REPLACE_ME",
+  "FirebaseClientEmail=REPLACE_ME",
+  "FirebasePrivateKey=REPLACE_ME",
+  "GroqApiKey=REPLACE_ME",
+  "GitHubToken=REPLACE_ME"
+]
